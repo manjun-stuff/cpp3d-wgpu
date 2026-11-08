@@ -30,7 +30,7 @@ namespace Engine
     class Material
     {
     public:
-        Material(const std::string &wgslFilePath, Renderer renderer);
+        Material(const std::string &wgslFilePath, Renderer &renderer);
         ~Material();
 
         void SetProperty(const std::string &name, float value);
@@ -51,7 +51,7 @@ namespace Engine
     class Mesh
     {
     public:
-        Mesh(const Geometry &geometry, std::shared_ptr<Material> material);
+        Mesh(const Geometry &geometry, std::shared_ptr<Material> material, Renderer &renderer);
         ~Mesh();
 
         Vector3 position = {0.f, 0.f, 0.f};
@@ -62,8 +62,8 @@ namespace Engine
     private:
         friend class Renderer;
         std::shared_ptr<Material> m_material;
-        WGPUBufferImpl *m_vertexBuffer = nullptr;
-        WGPUBufferImpl *m_indexBuffer = nullptr;
+        std::unique_ptr<WGPUBufferImpl> m_vertexBuffer = nullptr;
+        std::unique_ptr<WGPUBufferImpl> m_indexBuffer = nullptr;
         uint32_t m_indexCount = 0;
     };
 
@@ -98,9 +98,9 @@ namespace Engine
         void InitWebGPU();
 
         GLFWwindowImpl *m_window = nullptr;
-        WGPUDeviceImpl *m_device = nullptr; // Opaque wrapper around WGPUDevice
+        WGPUDeviceImpl *m_device = nullptr; // wrapper around WGPUDevice
 
-        // Private swapchain/surface details are hidden in the .cpp file
+        // details hidden in C++ file
         void *m_surface = nullptr;
         void *m_queue = nullptr;
     };
