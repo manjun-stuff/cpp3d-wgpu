@@ -3,14 +3,36 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <array>
 
 struct WGPUDeviceImpl;
 struct WGPUBufferImpl;
 struct WGPURenderPipelineImpl;
+struct WGPUSurfaceImpl;
+struct WGPUQueueImpl;
+struct WGPUInstannceImpl;
 struct GLFWwindowImpl;
+
+namespace RenderConfig
+{
+    enum RenderMethod
+    {
+        Forward,
+        Deferred,
+        Raymarched,
+        Raytraced,
+        Custom
+    };
+
+    inline std::array<std::string, 5> renderMethodPaths = {"", "", "", "", ""}; // implement render methods later
+
+    void SetCustomRenderMethod(const std::string &renderPath);
+}
 
 namespace Engine
 {
+    class Renderer;
+
     struct Vector3
     {
         float x, y, z;
@@ -93,15 +115,18 @@ namespace Engine
         WGPUDeviceImpl GetInternalDevice();
         GLFWwindowImpl GetWindow();
 
-    private:
-        void InitWindow(int width, int height, const std::string &title);
-        void InitWebGPU();
+        RenderConfig::RenderMethod renderMethod;
 
-        GLFWwindowImpl *m_window = nullptr;
-        WGPUDeviceImpl *m_device = nullptr; // wrapper around WGPUDevice
+    private:
+        bool InitWindow(int width, int height, const std::string &title);
+        bool InitWebGPU();
+
+        std::unique_ptr<GLFWwindowImpl> m_window = nullptr;
+        std::unique_ptr<WGPUDeviceImpl> m_device = nullptr; // wrapper around WGPUDevice
+        WGPUInstanceImpl m_wgpuInstance;
 
         // details hidden in C++ file
-        void *m_surface = nullptr;
-        void *m_queue = nullptr;
+        std::unique_ptr<WGPUSurfaceImpl> m_surface; // Changed from void*
+        std::unique_ptr<WGPUQueueImpl> m_queue;
     };
 }
