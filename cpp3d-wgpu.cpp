@@ -7,6 +7,9 @@
 #include <fstream>
 #include <sstream>
 #include <string_view>
+#include <cassert>
+#include <cmath>
+#include <cstdint>
 #ifdef __EMSCRIPTEN__
 #include <emscripten/html5.h>
 #include <webgpu/webgpu.h>
@@ -117,13 +120,44 @@ void HandleRequestAdapter(WGPURequestAdapterStatus status, WGPUAdapter adapter, 
 
 namespace Engine
 {
-    Vector3 Quaternion::QuaternionToEuler(Quaternion &quat)
+
+    Vector3 Quaternion::QuaternionToEuler(const Quaternion &quat)
     {
         Vector3 result;
         result.x = std::atan2(-2.f * (quat.y * quat.z - quat.w * quat.x), 1.f - 2.f * (quat.x * quat.x + quat.y * quat.y)); // Calculate ɸ phi
-        result.y = std::asin(2 * (quat.x * quat.z + quat.w * quat.y));                                                      // Calculate θ (theta)
+        result.y = std::asin(std::clamp(2 * (quat.x * quat.z + quat.w * quat.y), -1.f, 1.f));                               // Calculate θ (theta)
         result.z = std::atan2(-2.f * (quat.x * quat.y - quat.w * quat.z), 1.f - 2.f * (quat.y * quat.y + quat.z * quat.z)); // Calculate Ψ (psi)
         return result;
+    }
+
+    Quaternion Quaternion::operator*(const Quaternion &other) const
+    {
+        Quaternion result;
+        result.x = this->w * other.x + this->x * other.w + this->y * other.z - this->z * other.y;  // Calculate i
+        result.y = this->w * other.y - this->x * other.z + this->y * other.w + this->z * other.x;  // Calculate j
+        result.z = this->w * other.z + this->x * other.y - this->y * other.x + this->z * other.w;  // Calculate k
+        result.w = -this->x * other.x - this->y * other.y - this->z * other.z + this->w * other.w; // Calculate real part
+        return result;
+    }
+
+    Quaternion Quaternion::EulerToQuaternion(Vector3 vec)
+    {
+        Vector3 cos = {
+            std::cos(vec.x / 2),
+            std::cos(vec.y / 2),
+            std::cos(vec.z / 2)};
+
+        Vector3 sin = {
+            std::sin(vec.x / 2),
+            std::sin(vec.y / 2),
+            std::sin(vec.z / 2)};
+
+        Quaternion qx = {sin.x, 0, 0, cos.x};
+        Quaternion qy = {0, sin.y, 0, cos.y};
+        Quaternion qz = {0, 0, sin.z, cos.z};
+
+        Quaternion qxy = qx * qy;
+        return qxy * qz;
     }
 
     Material::Material(const std::string &wgslFilePath, Renderer &renderer)
@@ -224,6 +258,14 @@ namespace Engine
         }
     }
 
+    void Material::SetProperty(const std::string &name, float value)
+    {
+    }
+
+    void Material::SetVector(const std::string &name, Vector3 vec)
+    {
+    }
+
     Mesh::Mesh(const Geometry &geometry, std::shared_ptr<Material> material, Renderer &renderer)
         : m_material(material)
     {
@@ -316,7 +358,14 @@ namespace Engine
         m_device->handle = nullptr;
 
         WGPUInstanceDescriptor instanceDesc = {};
+        instanceDesc.nextInChain = nullptr;
+
+#ifdef __EMSCRIPTEN__
+        m_wgpuInstance.handle = wgpuCreateInstance(nullptr);
+#else
         m_wgpuInstance.handle = wgpuCreateInstance(&instanceDesc);
+#endif
+
         if (!m_wgpuInstance.handle)
         {
             std::cerr << "WebGPU Error: WebGPU Instance could not be created" << std::endl;
@@ -335,25 +384,22 @@ namespace Engine
         adapterOptions.compatibleSurface = m_surface->handle;
         WGPUAdapter adapter = {};
 
-        bool requestCompleted = false;
+        WGPURequestAdapterCallbackInfo callbackInfoAdapter = {
+            .callback = HandleRequestAdapter,
+            .mode = WGPUCallbackMode_WaitAnyOnly,
+            .userdata1 = &adapter,
+            .userdata2 = nullptr};
 
-        WGPURequestAdapterCallbackInfo callbackInfo1 = {};
-        callbackInfo1.callback = HandleRequestAdapter;
-        callbackInfo1.userdata1 = &adapter;
-        callbackInfo1.userdata2 = &requestCompleted;
+        WGPUFuture future = wgpuInstanceRequestAdapter(m_wgpuInstance.handle, &adapterOptions, callbackInfoAdapter);
 
-        wgpuInstanceRequestAdapter(m_wgpuInstance.handle, &adapterOptions, callbackInfo1);
+        WGPUFutureWaitInfo waitInfo = {
+            .future = future,
+            .completed = false};
 
-        while (!requestCompleted)
-        {
-#ifdef __EMSCRIPTEN__
-            emscripten_sleep(0);
-#else
-            wgpuInstanceProcessEvents(m_wgpuInstance.handle);
-#endif
-        }
+        WGPUWaitStatus waitStatus = wgpuInstanceWaitAny(m_wgpuInstance.handle, 1, &waitInfo, 0);
 
-        requestCompleted = false;
+        assert(waitStatus == WGPUWaitStatus_Success);
+        assert(waitInfo.completed);
 
         if (!adapter)
         {
@@ -362,25 +408,24 @@ namespace Engine
         }
 
         // get device
-        WGPURequestDeviceCallbackInfo callbackInfo2 = {};
-        callbackInfo2.callback = HandleRequestDevice;
-        callbackInfo2.userdata1 = &m_device->handle;
-        callbackInfo2.userdata2 = &requestCompleted;
+        WGPURequestDeviceCallbackInfo callbackInfoDevice = {
+            .callback = HandleRequestDevice,
+            .mode = WGPUCallbackMode_WaitAnyOnly,
+            .userdata1 = &m_device->handle,
+            .userdata2 = nullptr};
 
         WGPUDeviceDescriptor deviceDesc = {};
         deviceDesc.label.data = "Primary Engine Device";
         deviceDesc.label.length = WGPU_STRLEN;
 
-        wgpuAdapterRequestDevice(adapter, &deviceDesc, callbackInfo2);
+        future = wgpuAdapterRequestDevice(adapter, &deviceDesc, callbackInfoDevice);
 
-        while (!requestCompleted)
-        {
-#ifdef __EMSCRIPTEN__
-            emscripten_sleep(0);
-#else
-            wgpuInstanceProcessEvents(m_wgpuInstance.handle);
-#endif
-        }
+        waitInfo.completed = false;
+
+        waitStatus = wgpuInstanceWaitAny(m_wgpuInstance.handle, 1, &waitInfo, 0);
+
+        assert(waitStatus == WGPUWaitStatus_Success);
+        assert(waitInfo.completed);
 
         if (!m_device->handle)
         {
@@ -393,9 +438,10 @@ namespace Engine
         surfaceConfig.device = m_device->handle;
         surfaceConfig.format = WGPUTextureFormat_BGRA8Unorm;
         surfaceConfig.usage = WGPUTextureUsage_RenderAttachment;
+        surfaceConfig.alphaMode = WGPUCompositeAlphaMode_Opaque;
 
         int width, height;
-        glfwGetWindowSize(m_window->handle, &width, &height);
+        glfwGetFramebufferSize(m_window->handle, &width, &height);
         surfaceConfig.width = static_cast<uint32_t>(width);
         surfaceConfig.height = static_cast<uint32_t>(height);
         surfaceConfig.presentMode = WGPUPresentMode_Fifo;
@@ -438,6 +484,11 @@ namespace Engine
         return *m_device;
     }
 
+    GLFWwindowImpl Renderer::GetWindow()
+    {
+        return *m_window;
+    }
+
     bool Renderer::ShouldClose() const
     {
         return glfwWindowShouldClose(m_window->handle);
@@ -446,5 +497,10 @@ namespace Engine
     void Renderer::PollEvents()
     {
         glfwPollEvents();
+    }
+
+    void Renderer::Clear(const Color &color = {0.f, 0.f, 0.f, 1.0f})
+    {
+        // do smth
     }
 }
