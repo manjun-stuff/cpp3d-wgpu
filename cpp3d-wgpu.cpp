@@ -144,6 +144,8 @@ namespace Engine
     Quaternion Quaternion::Norm()
     {
         float mag = std::sqrt(x * x + y * y + z * z + w * w);
+        if (mag > 0.00001f)
+            return Quaternion{0, 0, 0, 1};
         return Quaternion{
             .x = x / mag,
             .y = y / mag,
@@ -174,6 +176,8 @@ namespace Engine
     Vector3 Vector3::Norm()
     {
         float mag = std::sqrt(x * x + y * y + z * z);
+        if (mag > 0.00001f)
+            return Vector3{0, 0, 0};
         return Vector3{
             .x = x / mag,
             .y = y / mag,

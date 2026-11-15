@@ -26,6 +26,7 @@ Or if you are forking / modifying my code:
 ```
 
 ### Namespaces
+
 * `Engine` — The main namespace for the project.
 * `RenderConfig` — Contains render settings (functions, variables, and enums).
 
@@ -33,6 +34,20 @@ Or if you are forking / modifying my code:
 RenderConfig::RenderMethod; // Enumerator for render methods
 Engine::Renderer;           // Main renderer class
 ```
+
+### Dependencies
+
+* `webgpu.h` - Will work with both `wgpu-native` and `Dawn` (after changing include block a bit), this implementation is made to use `wgpu-native`'s `webgpu-headers/webgpu.h`.
+* `glfw3` - You can install it in multiple ways depending on OS.
+    * **macOS:** `brew install glfw`
+    * **Ubuntu/Devian:** `sudo apt install libglfw3-dev`
+    * **Windows (vcpkg):** `vcpkg install glfw3`
+* `glfw3webgpu` - Install through **GitHub**, link is [`glfw3webgpu`](https://github.com/eliemichel/glfw3webgpu)
+
+```bash
+brew install 
+```
+
 
 ## Things to Know
 

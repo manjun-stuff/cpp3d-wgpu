@@ -62,6 +62,7 @@ namespace Engine
     inline constexpr float RAD2DEG = 180 / PI;
 
     class Renderer;
+    class Quaternion;
 
     /**
      * Basic vector containing 3 float components.
