@@ -66,12 +66,21 @@ namespace Engine
     /**
      * Basic vector containing 3 float components.
      */
-    struct Vector3
+    class Vector3
     {
+    public:
         /**
          * Vector component.
          */
         float x, y, z;
+        /**
+         * Get the quaternion equivalent of a vector.
+         */
+        Quaternion ToQuaternion();
+        /**
+         * Returns the normalized value of the vector (magnitude 1).
+         */
+        Vector3 Norm();
     };
     /**
      * Basic color struct, has red, green, blue, and alpha channels, from 0.0 - 1.0 .
@@ -97,11 +106,11 @@ namespace Engine
         /**
          * Get the vector equivalent of a quaternion.
          */
-        static Vector3 QuaternionToEuler(const Quaternion &quat);
+        Vector3 ToEuler();
         /**
-         * Get the quaternion equivalent of a vector.
+         * Returns the normalized value of the quaternion (magnitude 1).
          */
-        static Quaternion EulerToQuaternion(Vector3 vec);
+        Quaternion Norm();
         /**
          * Get the Hamilton product of two quaternions.
          */
@@ -223,6 +232,22 @@ namespace Engine
          * The aspect ratio of the camera.
          */
         float aspect = 16.0f / 9.0f;
+        /**
+         * Rotates the camera by a quaternion.
+         */
+        void Rotate(Quaternion &rotation);
+        /**
+         * Rotates the camera by a vector.
+         */
+        void Rotate(Vector3 &rotation);
+        /**
+         * Sets the camera rotation using a quaternion.
+         */
+        void SetRotation(Quaternion &angle);
+        /**
+         * Sets the camera rotation using a vector.
+         */
+        void SetRotation(Vector3 &angle);
     };
 
     /**
@@ -284,7 +309,7 @@ namespace Engine
 
         std::unique_ptr<GLFWwindowImpl> m_window = nullptr;
         std::unique_ptr<WGPUDeviceImpl> m_device = nullptr; // wrapper around WGPUDevice
-        WGPUInstanceImpl m_wgpuInstance;
+        std::unique_ptr<WGPUInstanceImpl> m_wgpuInstance = nullptr;
 
         // details hidden in C++ file
         std::unique_ptr<WGPUSurfaceImpl> m_surface;

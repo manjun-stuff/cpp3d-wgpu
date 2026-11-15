@@ -10,6 +10,7 @@
 #include <cassert>
 #include <cmath>
 #include <cstdint>
+#include <algorithm>
 #ifdef __EMSCRIPTEN__
 #include <emscripten/html5.h>
 #include <webgpu/webgpu.h>
@@ -121,36 +122,46 @@ void HandleRequestAdapter(WGPURequestAdapterStatus status, WGPUAdapter adapter, 
 namespace Engine
 {
 
-    Vector3 Quaternion::QuaternionToEuler(const Quaternion &quat)
+    Vector3 Quaternion::ToEuler()
     {
         Vector3 result;
-        result.x = std::atan2(-2.f * (quat.y * quat.z - quat.w * quat.x), 1.f - 2.f * (quat.x * quat.x + quat.y * quat.y)); // Calculate ɸ phi
-        result.y = std::asin(std::clamp(2 * (quat.x * quat.z + quat.w * quat.y), -1.f, 1.f));                               // Calculate θ (theta)
-        result.z = std::atan2(-2.f * (quat.x * quat.y - quat.w * quat.z), 1.f - 2.f * (quat.y * quat.y + quat.z * quat.z)); // Calculate Ψ (psi)
+        result.x = std::atan2(-2.f * (y * z - w * x), 1.f - 2.f * (x * x + y * y)); // Calculate ɸ phi
+        result.y = std::asin(std::clamp(2 * (x * z + w * y), -1.f, 1.f));           // Calculate θ (theta)
+        result.z = std::atan2(-2.f * (x * y - w * z), 1.f - 2.f * (y * y + z * z)); // Calculate Ψ (psi)
         return result;
     }
 
     Quaternion Quaternion::operator*(const Quaternion &other) const
     {
-        Quaternion result;
-        result.x = this->w * other.x + this->x * other.w + this->y * other.z - this->z * other.y;  // Calculate i
-        result.y = this->w * other.y - this->x * other.z + this->y * other.w + this->z * other.x;  // Calculate j
-        result.z = this->w * other.z + this->x * other.y - this->y * other.x + this->z * other.w;  // Calculate k
-        result.w = -this->x * other.x - this->y * other.y - this->z * other.z + this->w * other.w; // Calculate real part
-        return result;
+        return Quaternion{
+            .x = w * other.x + x * other.w + y * other.z - z * other.y, // Calculate i
+            .y = w * other.y - x * other.z + y * other.w + z * other.x, // Calculate j
+            .z = w * other.z + x * other.y - y * other.x + z * other.w, // Calculate k
+            .w = -x * other.x - y * other.y - z * other.z + w * other.w // Calculate real part
+        };
     }
 
-    Quaternion Quaternion::EulerToQuaternion(Vector3 vec)
+    Quaternion Quaternion::Norm()
+    {
+        float mag = std::sqrt(x * x + y * y + z * z + w * w);
+        return Quaternion{
+            .x = x / mag,
+            .y = y / mag,
+            .z = z / mag,
+            .w = w / mag};
+    }
+
+    Quaternion Vector3::ToQuaternion()
     {
         Vector3 cos = {
-            std::cos(vec.x / 2),
-            std::cos(vec.y / 2),
-            std::cos(vec.z / 2)};
+            std::cos(x / 2),
+            std::cos(y / 2),
+            std::cos(z / 2)};
 
         Vector3 sin = {
-            std::sin(vec.x / 2),
-            std::sin(vec.y / 2),
-            std::sin(vec.z / 2)};
+            std::sin(x / 2),
+            std::sin(y / 2),
+            std::sin(z / 2)};
 
         Quaternion qx = {sin.x, 0, 0, cos.x};
         Quaternion qy = {0, sin.y, 0, cos.y};
@@ -158,6 +169,15 @@ namespace Engine
 
         Quaternion qxy = qx * qy;
         return qxy * qz;
+    }
+
+    Vector3 Vector3::Norm()
+    {
+        float mag = std::sqrt(x * x + y * y + z * z);
+        return Vector3{
+            .x = x / mag,
+            .y = y / mag,
+            .z = z / mag};
     }
 
     Material::Material(const std::string &wgslFilePath, Renderer &renderer)
@@ -314,6 +334,37 @@ namespace Engine
         }
     }
 
+    void Camera::Rotate(Quaternion &rotation)
+    {
+        Quaternion normRot = rotation.Norm();
+        this->rotation = normRot * this->rotation;
+        eulerRotation = this->rotation.ToEuler();
+    }
+
+    void Camera::Rotate(Vector3 &rotation)
+    {
+        Vector3 normRot = rotation.Norm();
+        Quaternion yaw = Vector3{0.0f, normRot.y, 0.0f}.ToQuaternion();
+        Quaternion pitch = Vector3{normRot.x, 0.0f, 0.0f}.ToQuaternion();
+
+        this->rotation = yaw * this->rotation * pitch;
+        eulerRotation = this->rotation.ToEuler();
+    }
+
+    void Camera::SetRotation(Quaternion &angle)
+    {
+        Quaternion normRot = angle.Norm();
+        rotation = normRot;
+        eulerRotation = normRot.ToEuler();
+    }
+
+    void Camera::SetRotation(Vector3 &angle)
+    {
+        Vector3 normRot = angle.Norm();
+        rotation = normRot.ToQuaternion();
+        eulerRotation = normRot;
+    }
+
     Renderer::Renderer(int width, int height, const std::string &windowTitle)
         : m_window(nullptr), m_device(nullptr), m_surface(nullptr), m_queue(nullptr), renderMethod(RenderConfig::Forward)
     {
@@ -344,9 +395,9 @@ namespace Engine
             glfwDestroyWindow(m_window->handle);
         }
 
-        if (m_wgpuInstance.handle)
+        if (m_wgpuInstance && m_wgpuInstance->handle)
         {
-            wgpuInstanceRelease(m_wgpuInstance.handle);
+            wgpuInstanceRelease(m_wgpuInstance->handle);
         }
 
         glfwTerminate();
@@ -360,20 +411,21 @@ namespace Engine
         WGPUInstanceDescriptor instanceDesc = {};
         instanceDesc.nextInChain = nullptr;
 
+        m_wgpuInstance = std::make_unique<WGPUInstanceImpl>();
 #ifdef __EMSCRIPTEN__
-        m_wgpuInstance.handle = wgpuCreateInstance(nullptr);
+        m_wgpuInstance->handle = wgpuCreateInstance(nullptr);
 #else
-        m_wgpuInstance.handle = wgpuCreateInstance(&instanceDesc);
+        m_wgpuInstance->handle = wgpuCreateInstance(&instanceDesc);
 #endif
 
-        if (!m_wgpuInstance.handle)
+        if (!m_wgpuInstance->handle)
         {
             std::cerr << "WebGPU Error: WebGPU Instance could not be created" << std::endl;
             return false;
         }
 
         m_surface = std::make_unique<WGPUSurfaceImpl>();
-        m_surface->handle = CreateWGPUSurfaceGLFW(m_wgpuInstance.handle, m_window->handle);
+        m_surface->handle = CreateWGPUSurfaceGLFW(m_wgpuInstance->handle, m_window->handle);
         if (!m_surface->handle)
         {
             std::cerr << "Surface Error: WebGPU Surface creation failed" << std::endl;
@@ -390,13 +442,13 @@ namespace Engine
             .userdata1 = &adapter,
             .userdata2 = nullptr};
 
-        WGPUFuture future = wgpuInstanceRequestAdapter(m_wgpuInstance.handle, &adapterOptions, callbackInfoAdapter);
+        WGPUFuture future = wgpuInstanceRequestAdapter(m_wgpuInstance->handle, &adapterOptions, callbackInfoAdapter);
 
         WGPUFutureWaitInfo waitInfo = {
             .future = future,
             .completed = false};
 
-        WGPUWaitStatus waitStatus = wgpuInstanceWaitAny(m_wgpuInstance.handle, 1, &waitInfo, 0);
+        WGPUWaitStatus waitStatus = wgpuInstanceWaitAny(m_wgpuInstance->handle, 1, &waitInfo, 0);
 
         assert(waitStatus == WGPUWaitStatus_Success);
         assert(waitInfo.completed);
@@ -422,7 +474,7 @@ namespace Engine
 
         waitInfo.completed = false;
 
-        waitStatus = wgpuInstanceWaitAny(m_wgpuInstance.handle, 1, &waitInfo, 0);
+        waitStatus = wgpuInstanceWaitAny(m_wgpuInstance->handle, 1, &waitInfo, 0);
 
         assert(waitStatus == WGPUWaitStatus_Success);
         assert(waitInfo.completed);
@@ -499,7 +551,7 @@ namespace Engine
         glfwPollEvents();
     }
 
-    void Renderer::Clear(const Color &color = {0.f, 0.f, 0.f, 1.0f})
+    void Renderer::Clear(const Color &color)
     {
         // do smth
     }
