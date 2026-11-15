@@ -135,13 +135,10 @@ namespace Engine
         ~Material();
 
         /**
-         * Set a property of the material.
+         * Set a property of the material to a value.
          */
-        void SetProperty(const std::string &name, float value);
-        /**
-         * Set a vector property of the material
-         */
-        void SetVector(const std::string &name, Vector3 vec);
+        template <typename T>
+        void SetProperty(const std::string &name, T val, Renderer &renderer);
 
     private:
         friend class Renderer;
@@ -304,6 +301,16 @@ namespace Engine
          */
         RenderConfig::RenderMethod renderMethod;
 
+        /**
+         * Get the shader parameter buffer.
+         */
+        WGPUBufferImpl GetShaderParamsBuffer();
+
+        /**
+         * Get the queue.
+         */
+        WGPUQueueImpl GetQueue();
+
     private:
         bool InitWindow(int width, int height, const std::string &title);
         bool InitWebGPU();
@@ -315,5 +322,8 @@ namespace Engine
         // details hidden in C++ file
         std::unique_ptr<WGPUSurfaceImpl> m_surface;
         std::unique_ptr<WGPUQueueImpl> m_queue;
+
+        // buffers
+        WGPUBufferImpl m_shaderParamsBuffer;
     };
 }

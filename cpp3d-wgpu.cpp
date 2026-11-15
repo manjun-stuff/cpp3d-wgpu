@@ -119,6 +119,15 @@ void HandleRequestAdapter(WGPURequestAdapterStatus status, WGPUAdapter adapter, 
     }
 }
 
+template <typename T>
+class alignas(16) GPUValue
+{
+    static_assert(std::is_trivially_copyable_v(T));
+
+public:
+    T value;
+};
+
 namespace Engine
 {
 
@@ -144,7 +153,7 @@ namespace Engine
     Quaternion Quaternion::Norm()
     {
         float mag = std::sqrt(x * x + y * y + z * z + w * w);
-        if (mag > 0.00001f)
+        if (mag < 0.00001f)
             return Quaternion{0, 0, 0, 1};
         return Quaternion{
             .x = x / mag,
@@ -176,7 +185,7 @@ namespace Engine
     Vector3 Vector3::Norm()
     {
         float mag = std::sqrt(x * x + y * y + z * z);
-        if (mag > 0.00001f)
+        if (mag < 0.00001f)
             return Vector3{0, 0, 0};
         return Vector3{
             .x = x / mag,
@@ -282,12 +291,12 @@ namespace Engine
         }
     }
 
-    void Material::SetProperty(const std::string &name, float value)
+    template <typename T>
+    void Material::SetProperty(const std::string &name, T val, Renderer &renderer)
     {
-    }
-
-    void Material::SetVector(const std::string &name, Vector3 vec)
-    {
+        GPUValue<T> gpuVal = GPUValue<T>{.value = val};
+        WGPUBuffer &buffer = renderer.GetShaderParamsBuffer().handle;
+        wgpuQueueWriteBuffer(renderer.GetQueue().handle, renderer.GetShaderParamsBuffer().handle, 0, gpuVal, sizeof(GPUValue<T>));
     }
 
     Mesh::Mesh(const Geometry &geometry, std::shared_ptr<Material> material, Renderer &renderer)
@@ -340,16 +349,14 @@ namespace Engine
 
     void Camera::Rotate(Quaternion &rotation)
     {
-        Quaternion normRot = rotation.Norm();
-        this->rotation = normRot * this->rotation;
+        this->rotation = rotation * this->rotation;
         eulerRotation = this->rotation.ToEuler();
     }
 
     void Camera::Rotate(Vector3 &rotation)
     {
-        Vector3 normRot = rotation.Norm();
-        Quaternion yaw = Vector3{0.0f, normRot.y, 0.0f}.ToQuaternion();
-        Quaternion pitch = Vector3{normRot.x, 0.0f, 0.0f}.ToQuaternion();
+        Quaternion yaw = Vector3{0.0f, rotation.y, 0.0f}.ToQuaternion();
+        Quaternion pitch = Vector3{rotation.x, 0.0f, 0.0f}.ToQuaternion();
 
         this->rotation = yaw * this->rotation * pitch;
         eulerRotation = this->rotation.ToEuler();
@@ -357,16 +364,14 @@ namespace Engine
 
     void Camera::SetRotation(Quaternion &angle)
     {
-        Quaternion normRot = angle.Norm();
-        rotation = normRot;
-        eulerRotation = normRot.ToEuler();
+        rotation = angle;
+        eulerRotation = angle.ToEuler();
     }
 
     void Camera::SetRotation(Vector3 &angle)
     {
-        Vector3 normRot = angle.Norm();
-        rotation = normRot.ToQuaternion();
-        eulerRotation = normRot;
+        rotation = angle.ToQuaternion();
+        eulerRotation = angle;
     }
 
     Renderer::Renderer(int width, int height, const std::string &windowTitle)
@@ -507,6 +512,12 @@ namespace Engine
         m_queue = std::make_unique<WGPUQueueImpl>();
         m_queue->handle = wgpuDeviceGetQueue(m_device->handle);
 
+        WGPUBufferDescriptor shaderParamsBufferDesc = {};
+        shaderParamsBufferDesc.size = 16u;
+        shaderParamsBufferDesc.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
+        shaderParamsBufferDesc.mappedAtCreation = false;
+        m_shaderParamsBuffer.handle = wgpuDeviceCreateBuffer(m_device->handle, &shaderParamsBufferDesc);
+
         wgpuAdapterRelease(adapter);
 
         return true;
@@ -545,6 +556,11 @@ namespace Engine
         return *m_window;
     }
 
+    WGPUBufferImpl Renderer::GetShaderParamsBuffer()
+    {
+        return m_shaderParamsBuffer;
+    }
+
     bool Renderer::ShouldClose() const
     {
         return glfwWindowShouldClose(m_window->handle);
@@ -558,5 +574,10 @@ namespace Engine
     void Renderer::Clear(const Color &color)
     {
         // do smth
+    }
+
+    WGPUQueueImpl Renderer::GetQueue()
+    {
+        return *m_queue;
     }
 }
