@@ -13,18 +13,22 @@ my first time with GLFW and WebGPU, so don't expect the craziest best thing in t
 ### Including
 
 To include this library you can just write
-'''cpp
+```cpp
 #include <cpp3d-wgpu.hpp>
-'''
+```
 or 
-'''cpp
+```cpp
 #include "cpp3d-wgpu.hpp"
-'''
+```
 if you are forking / modifying my code.
 
 ### Namespaces
 The main namespace for this project is 'Engine'.
 The render settings (functions, variables, enums) are in a separate namespace named 'RenderConfig'.
+```cpp
+RenderConfig::RenderMethod; // Enumerator for render methods
+Engine::Renderer; // Main renderer class
+```
 
 ## Things to Know
 
